@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Chess Hack Extension",
+  "name": "Chess Analysis Extension",
   "version": "1.0.0",
-  "description": "A simple chess extension built with React and TailwindCSS.",
+  "description": "AI-powered chess analysis extension for chess.com with best move suggestions and evaluation.",
   "action": {
     "default_popup": "index.html",
     "default_icon": {
@@ -18,5 +18,41 @@
     "48": "vite.svg", 
     "128": "vite.svg"
   },
-  "permissions": []
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*",
+    "https://chess.com/*",
+    "https://www.chess.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chess.com/game/live/*",
+        "https://www.chess.com/game/live/*",
+        "https://chess.com/play/online/*",
+        "https://www.chess.com/play/online/*",
+        "https://chess.com/play/computer*",
+        "https://www.chess.com/play/computer*",
+        "https://chess.com/game/*",
+        "https://www.chess.com/game/*",
+        "https://chess.com/play/*",
+        "https://www.chess.com/play/*"
+      ],
+      "js": ["content-script.js"],
+      "css": ["content-script.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/*",
+        "chess.js"
+      ],
+      "matches": ["https://chess.com/*", "https://www.chess.com/*"]
+    }
+  ]
 }

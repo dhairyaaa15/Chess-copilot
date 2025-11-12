@@ -1,0 +1,44 @@
+/* Chess Analysis Extension Content Script Styles */
+
+#chess-analysis-panel {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.4;
+    user-select: none;
+    cursor: default;
+}
+
+#chess-analysis-panel * {
+    box-sizing: border-box;
+}
+
+#chess-analysis-panel:hover {
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.7);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    #chess-analysis-panel {
+        top: 10px !important;
+        right: 10px !important;
+        width: 200px !important;
+        font-size: 12px !important;
+    }
+}
+
+/* Make sure the panel stays on top */
+#chess-analysis-panel {
+    z-index: 999999 !important;
+}
+
+/* Animation for showing/hiding */
+#chess-analysis-panel {
+    transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+    transform: translateY(0);
+    opacity: 1;
+}
+
+#chess-analysis-panel.hidden {
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+}

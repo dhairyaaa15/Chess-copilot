@@ -12,6 +12,8 @@ frontend/dist
 frontend/dist-ssr
 backend/venv/
 *.local
+backend/__pycache__
+backend/stockfish
 
 # Editor directories and files
 .vscode/*
