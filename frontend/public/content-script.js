@@ -100,6 +100,7 @@ function initializeExtension() {
     loadSettings();
     detectPlayerColor();
     createAnalysisPanel();
+    installDebugHelper();
     ensureChessJsLoaded()
         .catch((err) => {
             console.warn('Proceeding without chess.js while waiting for load', err);
@@ -107,6 +108,41 @@ function initializeExtension() {
         .finally(() => {
             startBoardMonitoring();
         });
+}
+
+function installDebugHelper() {
+    try {
+        window.__chessAnalysisDebug = () => {
+            const boards = Array.from(document.querySelectorAll('chess-board, wc-chess-board, cg-board'));
+            const pieces = Array.from(document.querySelectorAll('.piece, [data-piece]')).slice(0, 6);
+            const extraction = extractMovesAndFen();
+            const report = {
+                url: location.href,
+                boards: boards.map((b) => ({
+                    tag: b.tagName.toLowerCase(),
+                    attrs: Array.from(b.attributes || []).map((a) => `${a.name}=${a.value}`),
+                    hasShadow: Boolean(b.shadowRoot)
+                })),
+                pieceSample: pieces.map((p) => ({
+                    tag: p.tagName.toLowerCase(),
+                    cls: p.className,
+                    dataset: Object.assign({}, p.dataset || {})
+                })),
+                totalPieceElements: document.querySelectorAll('.piece, [data-piece]').length,
+                extraction: {
+                    movesCount: extraction.moves?.length || 0,
+                    hasFen: Boolean(extraction.fen),
+                    fen: extraction.fen,
+                    sampleMoves: (extraction.moves || []).slice(0, 6)
+                },
+                playerColor
+            };
+            console.log('[chess-analysis debug]', report);
+            return report;
+        };
+    } catch (e) {
+        console.warn('Failed to install debug helper', e);
+    }
 }
 
 function detectPlayerColor() {
@@ -190,6 +226,16 @@ function loadSettings() {
     });
 }
 
+const PANEL_ICONS = {
+    logo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 21h12"/><path d="M8 21v-7"/><path d="M16 21v-7"/><path d="M5 14h14"/><path d="M6 10h12"/><path d="M5 4v4h2V5h2v3h2V5h2v3h2V5h2v3h2V4Z"/></svg>`,
+    target: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>`,
+    scale: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M4 7h16"/><path d="M4 7l-2 6a4 4 0 0 0 8 0L8 7"/><path d="M20 7l-2 6a4 4 0 0 0 8 0L24 7" transform="translate(-4 0)"/></svg>`,
+    layers: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 3 8l9 5 9-5Z"/><path d="M3 13l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>`,
+    check: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20Z"/><path d="M12 10v5"/><circle cx="12" cy="18" r="0.6" fill="currentColor"/></svg>`,
+    crown: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 18h18"/><path d="M4 8l4 5 4-9 4 9 4-5v10H4Z"/></svg>`,
+    castle: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21h16"/><path d="M6 21v-8M18 21v-8"/><path d="M4 13h16"/><path d="M5 4v4h2V5h2v3h2V5h2v3h2V5h2v3h2V4Z"/></svg>`
+};
+
 function createAnalysisPanel() {
     if (analysisPanel) {
         analysisPanel.remove();
@@ -197,41 +243,54 @@ function createAnalysisPanel() {
 
     analysisPanel = document.createElement('div');
     analysisPanel.id = 'chess-analysis-panel';
-    analysisPanel.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        width: 250px;
-        min-height: 100px;
-        background: #1a1a1a;
-        border: 2px solid #3b82f6;
-        border-radius: 8px;
-        color: white;
-        font-family: Arial, sans-serif;
-        font-size: 14px;
-        z-index: 10000;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        display: none;
-    `;
+    analysisPanel.className = 'cae-panel';
+    analysisPanel.style.display = 'none';
 
     analysisPanel.innerHTML = `
-        <div style="padding: 12px; border-bottom: 1px solid #374151;">
-            <div style="font-weight: bold; color: #3b82f6; margin-bottom: 4px;">♟️ Chess Analysis</div>
-            <div id="analysis-status" style="font-size: 12px; color: #9ca3af;">Waiting for moves...</div>
+        <div class="cae-aurora" aria-hidden="true"></div>
+        <div class="cae-header">
+            <div class="cae-brand">
+                <span class="cae-brand-mark">${PANEL_ICONS.logo}</span>
+                <span class="cae-brand-label">
+                    <span class="cae-brand-title">Chess Analysis</span>
+                    <span class="cae-brand-sub">Engine overlay</span>
+                </span>
+            </div>
+            <div class="cae-status" id="analysis-status-pill">
+                <span class="cae-status-dot"></span>
+                <span class="cae-status-text" id="analysis-status">Standby</span>
+            </div>
         </div>
-        <div style="padding: 12px;">
-            <div id="best-move" style="margin-bottom: 12px;">
-                <div style="color: #10b981; font-weight: bold; margin-bottom: 4px;">🎯 Suggested Move:</div>
-                <div id="move-text" style="font-size: 18px; color: #fff; font-weight: bold;">-</div>
-                <div id="move-description" style="font-size: 12px; color: #9ca3af; margin-top: 4px;">-</div>
+
+        <div class="cae-section cae-section-move">
+            <div class="cae-section-head">
+                <span class="cae-section-icon">${PANEL_ICONS.target}</span>
+                <span class="cae-section-title">Suggested move</span>
             </div>
-            <div id="evaluation" style="padding-top: 8px; border-top: 1px solid #374151;">
-                <span style="color: #f59e0b; font-weight: bold;">Position: </span>
-                <span id="eval-text">-</span>
+            <div class="cae-move" id="move-text">—</div>
+            <div class="cae-move-desc" id="move-description">Waiting for a position.</div>
+        </div>
+
+        <div class="cae-section cae-section-eval">
+            <div class="cae-section-head">
+                <span class="cae-section-icon">${PANEL_ICONS.scale}</span>
+                <span class="cae-section-title">Evaluation</span>
+                <span class="cae-eval-value" id="eval-text">—</span>
             </div>
-            <div id="depth-info" style="font-size: 11px; color: #6b7280; margin-top: 8px;">
-                Analysis Depth: <span id="depth-value">${analysisDepth}</span>
+            <div class="cae-eval-bar" aria-hidden="true">
+                <div class="cae-eval-fill" id="eval-fill" style="width:50%"></div>
+                <div class="cae-eval-pivot"></div>
             </div>
+            <div class="cae-eval-legend">
+                <span>Black</span>
+                <span>Equal</span>
+                <span>White</span>
+            </div>
+        </div>
+
+        <div class="cae-footer">
+            <span class="cae-footer-icon">${PANEL_ICONS.layers}</span>
+            <span class="cae-footer-text">Depth <span id="depth-value">${analysisDepth}</span></span>
         </div>
     `;
 
@@ -240,6 +299,56 @@ function createAnalysisPanel() {
 
     if (isAnalysisEnabled) {
         analysisPanel.style.display = 'block';
+    }
+}
+
+function setPanelStatus(state) {
+    if (!analysisPanel) return;
+    const pill = analysisPanel.querySelector('#analysis-status-pill');
+    if (!pill) return;
+    pill.dataset.state = state || 'idle';
+}
+
+function parseEvaluation(evalStr) {
+    if (evalStr == null || evalStr === '-' || evalStr === '') {
+        return { whitePct: 50, label: '—', state: 'idle' };
+    }
+    const trimmed = String(evalStr).trim();
+    const mateMatch = trimmed.match(/^(-)?M(-?\d+)$/i);
+    if (mateMatch) {
+        const negative = Boolean(mateMatch[1]) || parseInt(mateMatch[2], 10) < 0;
+        return {
+            whitePct: negative ? 2 : 98,
+            label: `M${Math.abs(parseInt(mateMatch[2], 10))}`,
+            state: negative ? 'black' : 'white'
+        };
+    }
+    const pawns = parseFloat(trimmed);
+    if (Number.isNaN(pawns)) {
+        return { whitePct: 50, label: trimmed, state: 'idle' };
+    }
+    const ratio = Math.tanh(pawns / 3);
+    const pct = Math.max(2, Math.min(98, 50 + 50 * ratio));
+    const sign = pawns > 0 ? '+' : '';
+    return {
+        whitePct: pct,
+        label: `${sign}${pawns.toFixed(1)}`,
+        state: pawns > 0.2 ? 'white' : pawns < -0.2 ? 'black' : 'equal'
+    };
+}
+
+function updateEvalBar(evalStr) {
+    if (!analysisPanel) return;
+    const fill = analysisPanel.querySelector('#eval-fill');
+    const label = analysisPanel.querySelector('#eval-text');
+    const parsed = parseEvaluation(evalStr);
+    if (fill) {
+        fill.style.width = `${parsed.whitePct}%`;
+        fill.dataset.state = parsed.state;
+    }
+    if (label) {
+        label.textContent = parsed.label;
+        label.dataset.state = parsed.state;
     }
 }
 
@@ -310,11 +419,14 @@ function analyzeCurrentPosition() {
         const { moves, fen, positionKey } = extractMovesAndFen();
 
         if ((!moves || moves.length === 0) && !fen) {
-            updateAnalysisPanel('-', 'Waiting for game to start...', '-', 'Waiting for game to start...');
+            const pieceCount = document.querySelectorAll('.piece, [data-piece]').length;
+            console.warn('[chess-analysis] No FEN and no moves extracted. piece-elements=' + pieceCount +
+                '. Run window.__chessAnalysisDebug() in DevTools for a full dump.');
+            updateAnalysisPanel('-', 'Could not read the board. Open DevTools and run window.__chessAnalysisDebug().', '-', 'Board not detected');
             return;
         }
 
-        // Derive stable key (prefer FEN) with timestamp component to prevent stale caching
+        // Derive stable key (prefer FEN) for position-identity comparisons
         let stableKey;
         if (isLikelyFen(fen)) {
             stableKey = normalizeFenForKey(fen);
@@ -327,18 +439,12 @@ function analyzeCurrentPosition() {
             return;
         }
 
-        // Add timestamp component to break caching for repeated positions
-        const currentTime = Date.now();
-        const timestampComponent = Math.floor(currentTime / 5000); // Changes every 5 seconds
-        const finalKey = `${stableKey}|${timestampComponent}`;
-
-        currentObservedKey = finalKey;
+        currentObservedKey = stableKey;
 
         console.log('=== POSITION ANALYSIS ===');
         console.log('Raw FEN:', fen);
         console.log('Moves count:', moves ? moves.length : 0);
         console.log('Position key:', stableKey);
-        console.log('Final key (with timestamp):', finalKey);
         console.log('Last analyzed key:', lastAnalyzedKey);
         console.log('Pending request key:', pendingRequestKey);
 
@@ -385,14 +491,14 @@ function analyzeCurrentPosition() {
             return; // wait for current request to finish
         }
         if (stableKey === lastAnalyzedKey || stableKey === pendingRequestKey) {
-            console.log('Position unchanged - but forcing new analysis due to time-based cache busting');
-            // Don't return early - let the request proceed with timestamp component
+            console.log('Position unchanged - skipping duplicate analysis');
+            return;
         }
 
-        console.log('Starting new analysis request with key:', finalKey);
-        pendingRequestKey = finalKey;
+        console.log('Starting new analysis request with key:', stableKey);
+        pendingRequestKey = stableKey;
         lastRequestAt = now;
-        sendAnalysisRequest({ fen, moves, sideToMove: currentTurn, positionKey: finalKey });
+        sendAnalysisRequest({ fen, moves, sideToMove: currentTurn, positionKey: stableKey });
     } catch (error) {
         console.error('Error analyzing position:', error);
         updateAnalysisPanel('Error', 'Analysis failed to parse position', '-', 'Failed to analyze position');
@@ -431,6 +537,9 @@ function extractMovesAndFen() {
 
     const moveSelectors = [
         // Chess.com specific selectors (prioritized)
+        'wc-simple-move-list .node',
+        'wc-vertical-move-list .node',
+        'wc-horizontal-move-list .move',
         '.moves-text .move',
         '.move-text-component .move-san',
         '.nodes .node-label',
@@ -438,6 +547,7 @@ function extractMovesAndFen() {
         '.vertical-move-list .move-san',
         'chess-move .move-san',
         '[data-testid="pgn-move"] span',
+        '[data-ply]',
 
         // Generic fallbacks
         '.move-san',
@@ -1003,7 +1113,7 @@ function isValidMoveFormat(move) {
 
 function describeMoveInEnglish(move, moveSide = 'w', userColorValue = playerColor) {
     if (!move || move === '-' || move === 'No move' || move === 'Error') {
-        return 'Waiting for position...';
+        return 'Waiting for position.';
     }
 
     const pieceNames = {
@@ -1014,87 +1124,55 @@ function describeMoveInEnglish(move, moveSide = 'w', userColorValue = playerColo
         'N': 'Knight'
     };
 
-    // Handle castling
     if (move === 'O-O' || move === '0-0') {
-        return '🏰 Castle kingside (move King 2 squares right)';
+        return 'Castle kingside.';
     }
     if (move === 'O-O-O' || move === '0-0-0') {
-        return '🏰 Castle queenside (move King 2 squares left)';
+        return 'Castle queenside.';
     }
 
     const userSide = userColorValue === 'black' ? 'b' : 'w';
     const isUserMove = moveSide === userSide;
-    let description = '';
     let pieceType = 'Pawn';
-    let emoji = '♟️';
-    let isCapture = move.includes('x');
-    let isCheck = move.includes('+');
-    let isCheckmate = move.includes('#');
+    const isCapture = move.includes('x');
+    const isCheck = move.includes('+');
+    const isCheckmate = move.includes('#');
 
-    // Identify piece and emoji
     const firstChar = move[0];
     if (pieceNames[firstChar]) {
         pieceType = pieceNames[firstChar];
-        const emojiMap = {
-            'K': '♔',
-            'Q': '♕',
-            'R': '♖',
-            'B': '♗',
-            'N': '♘'
-        };
-        emoji = emojiMap[firstChar] || '';
     }
 
-    // Extract source square if specified (for disambiguation like Nbd7)
     let sourceHint = '';
     const sourceMatch = move.match(/^[KQRBN]([a-h]|[1-8])/);
     if (sourceMatch) {
         const src = sourceMatch[1];
-        if (src >= '1' && src <= '8') {
-            sourceHint = ` from row ${src}`;
-        } else {
-            const colNames = {
-                'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D',
-                'e': 'E', 'f': 'F', 'g': 'G', 'h': 'H'
-            };
-            sourceHint = ` from ${colNames[src]}-column`;
-        }
+        sourceHint = src >= '1' && src <= '8' ? ` from rank ${src}` : ` from the ${src}-file`;
     }
 
-    // Extract destination square
     const squareMatch = move.match(/([a-h][1-8])/);
     const destination = squareMatch ? squareMatch[0] : '';
-
-    // Column names for better readability
-    const columnNames = {
+    const colNames = {
         'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D',
         'e': 'E', 'f': 'F', 'g': 'G', 'h': 'H'
     };
 
-    // Build description
+    let description = '';
     if (destination) {
         const col = destination[0];
         const row = destination[1];
-        const colName = columnNames[col] || col.toUpperCase();
-
-        const moverPronoun = isUserMove ? 'your' : "the opponent's";
-        const targetDescription = isCapture
-            ? isUserMove ? "the opponent's piece" : 'your piece'
-            : `square ${colName}${row}`;
-
-        description = `${emoji} ${isUserMove ? 'Move' : 'Best reply:'} ${moverPronoun} ${pieceType}${sourceHint} `;
-
-        if (isCapture) {
-            description += `to capture ${targetDescription} on ${colName}${row}`;
-        } else {
-            description += `to ${targetDescription}`;
-        }
+        const sqLabel = `${colNames[col] || col.toUpperCase()}${row}`;
+        const prefix = isUserMove ? 'Move your' : 'Best reply: opponent plays';
+        description = `${prefix} ${pieceType}${sourceHint} `;
+        description += isCapture ? `to capture on ${sqLabel}` : `to ${sqLabel}`;
     }
 
     if (isCheckmate) {
-        description += isUserMove ? ' 👑 Checkmate!' : ' 👑 This line mates you.';
+        description += isUserMove ? '. Checkmate.' : '. This line mates you.';
     } else if (isCheck) {
-        description += isUserMove ? ' ⚠️ Check!' : ' ⚠️ Delivers check.';
+        description += isUserMove ? '. Delivers check.' : '. Delivers check.';
+    } else {
+        description += '.';
     }
 
     return description;
@@ -1178,16 +1256,12 @@ async function sendAnalysisRequest(position) {
         console.log('- Current Observed Key:', currentObservedKey);
         console.log('- Pending Request Key:', pendingRequestKey);
 
-        const isResultCurrent = positionKey === currentObservedKey || 
-                                (positionKey === pendingRequestKey) ||
-                                (positionKey.startsWith(currentObservedKey.split('|')[0]) && 
-                                 currentObservedKey.startsWith(positionKey.split('|')[0]));
-                                 
+        const isResultCurrent = positionKey === currentObservedKey;
+
         if (!isResultCurrent) {
-            console.log('🚫 DISCARDED STALE RESULT - position has changed');
+            console.log('Discarded stale result - position has changed');
             console.log('- Position Key:', positionKey);
             console.log('- Current Key:', currentObservedKey);
-            console.log('- Pending Key:', pendingRequestKey);
             lastRequestAt = 0;
             if (isAnalysisEnabled) {
                 setTimeout(() => analyzeCurrentPosition(), 200);
@@ -1195,7 +1269,7 @@ async function sendAnalysisRequest(position) {
             return;
         }
 
-        lastAnalyzedKey = positionKey.split('|')[0]; // Remove timestamp component for comparison
+        lastAnalyzedKey = positionKey;
         const moveDescription = describeMoveInEnglish(
             displayMove,
             effectiveSide,
@@ -1229,22 +1303,29 @@ async function sendAnalysisRequest(position) {
     }
 }
 
-function updateAnalysisPanel(bestMove, description, evaluation, status) {
+function updateAnalysisPanel(bestMove, description, evaluation, status, stateHint) {
     if (!analysisPanel) return;
 
     const statusElement = analysisPanel.querySelector('#analysis-status');
     const moveElement = analysisPanel.querySelector('#move-text');
     const descElement = analysisPanel.querySelector('#move-description');
-    const evalElement = analysisPanel.querySelector('#eval-text');
 
     if (statusElement) statusElement.textContent = status;
     if (moveElement) moveElement.textContent = bestMove;
     if (descElement) descElement.textContent = description;
-    if (evalElement) evalElement.textContent = evaluation;
 
-    if (statusElement) statusElement.textContent = status;
-    if (moveElement) moveElement.textContent = bestMove;
-    if (evalElement) evalElement.textContent = evaluation;
+    updateEvalBar(evaluation);
+
+    let pillState = stateHint;
+    if (!pillState) {
+        const s = (status || '').toLowerCase();
+        if (s.includes('computing') || s.includes('analyz')) pillState = 'thinking';
+        else if (s.includes('waiting') || s.includes('opponent') || s.includes('standby')) pillState = 'idle';
+        else if (s.includes('fail') || s.includes('error')) pillState = 'error';
+        else if (s.includes('complete')) pillState = 'ready';
+        else pillState = 'idle';
+    }
+    setPanelStatus(pillState);
 
     if (isAnalysisEnabled) {
         analysisPanel.style.display = 'block';
@@ -1280,7 +1361,17 @@ if (document.readyState === 'loading') {
 
 function extractFenFromBoard(movesCount) {
     try {
-        const pieceSelectors = ['[data-piece][data-square]', '.piece[data-square]', '[data-piece][square]', '[piece][square]'];
+        // Chess.com light-DOM markup looks like `<div class="piece wp square-45">` --
+        // no data-* attributes; coordinates are in the class list.
+        const pieceSelectors = [
+            '[data-piece][data-square]',
+            '.piece[data-square]',
+            '[data-piece][square]',
+            '[piece][square]',
+            'chess-board .piece',
+            'wc-chess-board .piece',
+            '.piece'
+        ];
         const pieceElements = [];
 
         const collectFromRoot = (root) => {
@@ -1365,12 +1456,20 @@ function extractSquareFromClasses(classList) {
     for (const cls of classList) {
         if (cls.startsWith('square-')) {
             const suffix = cls.split('-')[1];
-            if (suffix && /^[a-h][1-8]$/i.test(suffix)) {
+            if (!suffix) continue;
+            // Chess.com modern markup: `square-45` means file=4 (d), rank=5.
+            if (/^[1-8][1-8]$/.test(suffix)) {
+                const file = String.fromCharCode(96 + parseInt(suffix[0], 10));
+                const rank = parseInt(suffix[1], 10);
+                return `${file}${rank}`;
+            }
+            if (/^[a-h][1-8]$/i.test(suffix)) {
                 return suffix.toLowerCase();
             }
-            if (suffix && /^\d+$/.test(suffix)) {
+            // Rare: a single 0..63 index
+            if (/^\d{1,2}$/.test(suffix)) {
                 const index = parseInt(suffix, 10);
-                if (!Number.isNaN(index)) {
+                if (!Number.isNaN(index) && index >= 0 && index <= 63) {
                     const file = String.fromCharCode(97 + (index % 8));
                     const rank = Math.floor(index / 8) + 1;
                     return `${file}${rank}`;

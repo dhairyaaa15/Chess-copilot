@@ -205,21 +205,14 @@ class EnhancedChessAnalyzer:
             cache_key = f"{fen}|{forced_turn}|{depth}"
             current_time = time.time()
             
-            # Check if we have a recent analysis for this exact position
+            # Return cached result for the exact same position (same FEN = same best move)
             if cache_key in self.recent_analysis_cache:
                 cached_result, cached_time = self.recent_analysis_cache[cache_key]
                 if current_time - cached_time < self.cache_timeout:
                     logger.info(f"Returning cached result for position (cached {current_time - cached_time:.1f}s ago)")
-                    
-                    # If the same position is being analyzed repeatedly, try to offer alternative moves
-                    # to break the pattern and help the user explore different options
                     cached_result = cached_result.copy()
                     cached_result["cached"] = True
                     cached_result["cache_age"] = round(current_time - cached_time, 1)
-                    
-                    # Add analysis note for repeated requests
-                    cached_result["analysis_note"] = "Repeated position - consider exploring different moves"
-                    
                     return cached_result
             
             # Clean old cache entries
@@ -298,32 +291,7 @@ class EnhancedChessAnalyzer:
                 eval_limit = chess.engine.Limit(depth=min(adjusted_depth, 20), time=5.0)
                 info = engine.analyse(board, eval_limit)
                 evaluation = self._format_evaluation(info.get("score"))
-                
-                # Check for position repetition and prefer non-repeating moves if possible
-                temp_board = board.copy()
-                temp_board.push(best_move)
-                resulting_fen = temp_board.fen()
-                
-                if self._is_position_repeated(resulting_fen):
-                    logger.info("Best move leads to repetition, looking for alternatives")
-                    try:
-                        # Get multiple candidates to find non-repeating alternative (with shorter time limit)
-                        quick_limit = chess.engine.Limit(depth=min(adjusted_depth - 2, 18), time=3.0)
-                        candidates = self._get_multiple_candidate_moves(engine, board, quick_limit.depth)
-                        
-                        for candidate in candidates[1:]:  # Skip first (repeated) move
-                            if self._validate_move_legality(board, candidate['move']):
-                                temp_board = board.copy()
-                                temp_board.push(candidate['move'])
-                                if not self._is_position_repeated(temp_board.fen()):
-                                    best_move = candidate['move']
-                                    evaluation = self._format_evaluation(candidate['score'])
-                                    logger.info(f"Found non-repeating alternative move: {best_move}")
-                                    break
-                    except Exception as rep_error:
-                        logger.warning(f"Failed to find alternative move: {rep_error}")
-                        # Continue with original best move
-                
+
                 # Get move in both UCI and SAN format
                 move_uci = best_move.uci() if best_move else None
                 move_san = board.san(best_move) if best_move else None
