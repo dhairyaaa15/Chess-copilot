@@ -407,7 +407,7 @@ function debouncedAnalyzePosition() {
         if (isAnalysisEnabled) {
             analyzeCurrentPosition();
         }
-    }, 800);
+    }, 1200);
 }
 
 function analyzeCurrentPosition() {
@@ -1194,7 +1194,7 @@ async function sendAnalysisRequest(position) {
     console.log('Move Count:', moves ? moves.length : 0);
     console.log('Player Color:', playerColor);
 
-    updateAnalysisPanel('...', 'Computing best move...', '-', 'Analyzing current position...');
+    updateAnalysisPanel('...', 'Computing best move...', '-', 'Analyzing...');
 
     try {
         requestInFlight = true;
@@ -1438,12 +1438,22 @@ function extractFenFromBoard(movesCount) {
             ranks.push(rankStr);
         }
 
-        const boardPart = ranks.join('/');
-        const sideToMove = determineSideToMove(movesCount);
-        const fullMove = Math.max(1, Math.ceil((movesCount + (sideToMove === 'b' ? 1 : 2)) / 2));
+        const sanity = validateFenSanity(squareToPiece);
+        if (!sanity.ok) {
+            console.warn('[chess-analysis] FEN from board failed sanity check:', sanity.reason);
+            return null;
+        }
 
-        const fen = `${boardPart} ${sideToMove} - - 0 ${fullMove}`;
-        const key = `${boardPart}|${sideToMove}|${fullMove}`;
+        const boardPart = ranks.join('/');
+        const effectiveMoves = (typeof movesCount === 'number' && movesCount > 0)
+            ? movesCount
+            : (countHalfMovesInDom() || 0);
+        const sideToMove = determineSideToMove(effectiveMoves);
+        const castling = inferCastlingRights(squareToPiece);
+        const fullMove = Math.max(1, Math.floor(effectiveMoves / 2) + 1);
+
+        const fen = `${boardPart} ${sideToMove} ${castling} - 0 ${fullMove}`;
+        const key = `${boardPart}|${sideToMove}|${castling}|${fullMove}`;
         return { fen, key };
     } catch (error) {
         console.warn('Failed to extract board FEN:', error);
@@ -1530,6 +1540,67 @@ function mapPieceCodeToFen(code) {
     return '';
 }
 
+function countHalfMovesInDom() {
+    const nodeSelectors = [
+        'wc-simple-move-list .node',
+        'wc-vertical-move-list .node',
+        'wc-horizontal-move-list .move',
+        '.vertical-move-list .move',
+        '.moves-text .move',
+        '.move-list-component .move-san',
+        '[data-ply]'
+    ];
+    for (const sel of nodeSelectors) {
+        let nodes;
+        try {
+            nodes = document.querySelectorAll(sel);
+        } catch (_) {
+            continue;
+        }
+        if (!nodes || nodes.length === 0) continue;
+        const main = Array.from(nodes).filter((n) => {
+            const parentCls = n.parentElement?.className || '';
+            return !parentCls.includes('variation') && !parentCls.includes('analysis');
+        });
+        if (main.length > 0) return main.length;
+    }
+    return null;
+}
+
+function inferCastlingRights(squareToPiece) {
+    let rights = '';
+    if (squareToPiece.e1 === 'K') {
+        if (squareToPiece.h1 === 'R') rights += 'K';
+        if (squareToPiece.a1 === 'R') rights += 'Q';
+    }
+    if (squareToPiece.e8 === 'k') {
+        if (squareToPiece.h8 === 'r') rights += 'k';
+        if (squareToPiece.a8 === 'r') rights += 'q';
+    }
+    return rights || '-';
+}
+
+function validateFenSanity(squareToPiece) {
+    const values = Object.values(squareToPiece);
+    const whiteKings = values.filter((p) => p === 'K').length;
+    const blackKings = values.filter((p) => p === 'k').length;
+    if (whiteKings !== 1 || blackKings !== 1) {
+        return { ok: false, reason: `king counts white=${whiteKings} black=${blackKings}` };
+    }
+    const totalPieces = values.length;
+    if (totalPieces < 2 || totalPieces > 32) {
+        return { ok: false, reason: `piece count ${totalPieces}` };
+    }
+    for (const [sq, p] of Object.entries(squareToPiece)) {
+        if (p.toLowerCase() !== 'p') continue;
+        const rank = sq[1];
+        if (rank === '1' || rank === '8') {
+            return { ok: false, reason: `pawn on back rank at ${sq}` };
+        }
+    }
+    return { ok: true };
+}
+
 function determineSideToMove(movesCount) {
     try {
         // Method 1: Check board element turn attributes (most reliable)
@@ -1590,10 +1661,18 @@ function determineSideToMove(movesCount) {
             }
         }
 
-        // Method 4: Fallback to move count calculation
-        if (typeof movesCount === 'number') {
+        // Method 4: Count actual half-moves in the DOM (most reliable on chess.com play pages)
+        const domHalfMoves = countHalfMovesInDom();
+        if (domHalfMoves !== null) {
+            const turn = domHalfMoves % 2 === 0 ? 'w' : 'b';
+            console.log('Turn detected from DOM half-move count:', turn, 'halfMoves:', domHalfMoves);
+            return turn;
+        }
+
+        // Method 5: Fallback to passed-in move count parity
+        if (typeof movesCount === 'number' && movesCount > 0) {
             const turn = movesCount % 2 === 0 ? 'w' : 'b';
-            console.log('Turn detected from move count:', turn, 'moves:', movesCount);
+            console.log('Turn detected from passed move count:', turn, 'moves:', movesCount);
             return turn;
         }
     } catch (error) {

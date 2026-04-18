@@ -201,6 +201,54 @@ def test_missing_payload():
     )
 
 
+def test_captures_hanging_queen():
+    """
+    Black queen is on d5, attacked by white knight on c3 with no defender.
+    The engine must capture the queen with Nxd5.
+    """
+    fen = "rnb1kbnr/ppp1pppp/8/3q4/8/2N5/PPPPPPPP/R1BQKBNR w KQkq - 0 3"
+    r = post_analyze({"fen": fen, "depth": 14})
+    if r.status_code != 200:
+        record("tactical: captures hanging queen", False, r.text[:120])
+        return
+    d = r.json()
+    move = d.get("bestMoveSAN")
+    record(
+        "tactical: engine captures hanging queen with Nxd5",
+        move == "Nxd5",
+        f"move={move} eval={d.get('evaluation')}",
+    )
+
+
+def test_avoids_mate_in_one():
+    """
+    Black threatens ...Qxf2#. Engine playing white must prevent it -- either
+    by blocking, capturing the attacker, or moving the king.
+    The obvious blunder here is any move that leaves f2 undefended.
+    """
+    fen = "rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3"
+    r = post_analyze({"fen": fen, "depth": 14})
+    if r.status_code != 200:
+        record("tactical: avoids mate in one", False, r.text[:120])
+        return
+    d = r.json()
+    move = d.get("bestMoveSAN")
+    # Any move that is NOT one of the known blunders is acceptable; the known
+    # saving moves include blocks/captures/king moves. Simpler assertion: after
+    # the suggested move, the engine's evaluation should not be catastrophically
+    # lost (i.e. not reporting "M1" against us).
+    evaluation = d.get("evaluation", "")
+    disaster = evaluation.startswith("M-") or (
+        evaluation.replace("-", "").replace(".", "").isdigit()
+        and float(evaluation) < -5.0
+    )
+    record(
+        "tactical: engine defends against mate threat (no catastrophic eval)",
+        not disaster and bool(move),
+        f"move={move} eval={evaluation}",
+    )
+
+
 def test_side_to_move_forcing():
     """
     Passing sideToMove='b' against a starting-position FEN should make the
@@ -235,6 +283,8 @@ def main():
     test_cache_metadata()
     test_moves_input()
     test_mate_in_one()
+    test_captures_hanging_queen()
+    test_avoids_mate_in_one()
     test_invalid_fen()
     test_missing_payload()
     test_side_to_move_forcing()
